@@ -32,7 +32,7 @@ to play the next or previous token hit the arrow keys on the keyboard.
 go to:         
 https://fungle.xyz/kleee02_new/visual/#328        
 replace the number after the # with the token number you want to project.       
-there is a hidden record button at the bottom right of the page. click it.       
-it will record the token and download a file token_N.json to your downloads folder.
-you can now copy that file to the projectKleee02 folder and project it.
+there is a hidden record button at the bottom right of the page. click it.             
+it will record the token and download a file token_N.json to your downloads folder.     
+you can now copy that file to the projectKleee02 folder and project it.       
 note: some of the settings of the editor will be taken into account like FPS and Animation Speed.     
