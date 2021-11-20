@@ -1,12 +1,11 @@
 {
-  "name" : "projectKleee02",
-   "version" : "1.0.0",
+  "name": "projectKleee02",
+  "version": "1.0.0",
   "main": "main.js",
- "type":"module",
+  "type": "module",
   "dependencies": {
     "@laser-dac/core": "^0.4.1",
     "@laser-dac/draw": "^0.6.0",
-    "@laser-dac/helios": "^0.3.1",
-    "express": "^4.17.1"
+    "@laser-dac/helios": "^0.3.1"
   }
 }

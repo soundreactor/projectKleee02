@@ -1,11 +1,9 @@
 import { DAC } from '@laser-dac/core';
 import { Helios } from '@laser-dac/helios';
-
 import pkg from '@laser-dac/draw';
-const { Scene, Rect, Point } = pkg;
-import * as fs from 'fs';
+const { Scene } = pkg;
 
-import express from 'express';
+import * as fs from 'fs';
 
 
 const pps = 30000; // points per second
