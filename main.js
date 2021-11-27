@@ -9,6 +9,9 @@ import * as fs from 'fs';
 const pps = 30000; // points per second
 const fps = 120; // doesnt seem to change anything
 
+var intensity = 1;
+var intensity2 = .1;
+
 var idx = 0;
 var f_idx = 0;
 var token = {};
@@ -47,7 +50,14 @@ token = GetJson(token_files[f_idx]);
 
       //points2.push({x: x2, y: y2, r: 1, g: 1, b: 0})
       //points2.push({x: x2, y: y2, r: round(points[i].r,2), g: round(points[i].g,2), b: round(points[i].b,2)})
-      points2.push({x: x2, y: y2, r: points[i].r, g: points[i].g, b: points[i].b})
+      points2.push({
+        x: x2,
+        y: y2,
+        r: points[i].r*intensity,
+        g: points[i].g*intensity,
+        b: points[i].b*intensity,
+        i:intensity2,
+      })
 
     }
 
