@@ -1,6 +1,5 @@
 .DS_Store
 package-lock.json
 *node_modules/*
-token_317.json
 junk
-*.json
+node_modules_nkdf

@@ -7,6 +7,7 @@ import * as fs from 'fs';
 
 var  font = loadHersheyFont('fonts/futuram.jhf');
 
+
 var  pps = 40000; // points per second
 var  fps = 120; // doesnt seem to change anything
 

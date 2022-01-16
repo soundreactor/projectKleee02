@@ -6,6 +6,7 @@ const { Scene } = pkg;
 import * as fs from 'fs';
 
 
+
 const pps = 30000; // points per second
 const fps = 120; // doesnt seem to change anything
 
