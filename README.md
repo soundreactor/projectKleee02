@@ -16,7 +16,7 @@ Lasers are **not toys**. They can cause permanent eye injury, skin burns, and fi
   Get Node.js: <https://nodejs.org/>
 
 ## Install
-1. Install Node.js if you haven’t already.  
+1. Install Node.js (has to be v16 !!).  
 2. Download this repo and extract it to a folder.  
 3. Open a terminal and `cd` into the project folder. Easiest way: type `cd ` then drag the folder into the terminal.
    ```bash
