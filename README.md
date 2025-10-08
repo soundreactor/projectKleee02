@@ -1,6 +1,6 @@
 # projectKleee02
 
-> Control an ILDA laser projector with token animations saved as `token_N.json` files.
+> Play Kleee02 NFTs on an ILDA laser projector!
 
 ## ⚠️ Laser Safety (Read First)
 Lasers are **not toys**. They can cause permanent eye injury, skin burns, and fire hazards. Before operating any laser projector, **learn proper laser safety practices** (beam heights, audience scanning rules, interlocks, eyewear, local laws). By using this software, **you accept all responsibility** for safe setup and operation.
