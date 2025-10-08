@@ -1,48 +1,60 @@
 # projectKleee02
- 
-## what you need:
-- ilda laser projector with analog colors (not TTL)     
-[for example https://phantomdynamics.com/unity-lasers-elite-2-ilda-laser-light-show-projector/ ]     
-- helios laser dac     
-[for example https://ebay.us/m/KVduID]      
-- computer with node js
 
-get node js here:
-https://nodejs.org/
+> Control an ILDA laser projector with token animations saved as `token_N.json` files.
 
-:          
-    
-    
+## ⚠️ Laser Safety (Read First)
+Lasers are **not toys**. They can cause permanent eye injury, skin burns, and fire hazards. Before operating any laser projector, **learn proper laser safety practices** (beam heights, audience scanning rules, interlocks, eyewear, local laws). By using this software, **you accept all responsibility** for safe setup and operation.
 
+---
 
-## installation:
-install node js if you have not yet.       
-download this repo and extract it to a folder      
-open a terminal.   
-navigate inside the folder with your terminal.     
-type ```cd``` and drag and drop the repo folder into the terminal.    
-```
-xxx:~ vp$ cd /location/of/your/folder/projectKleee02
-```  
-now install the dependencies.      
-```
-npm install
-```     
-to start the show of the 2 example tokens
-```
+## Requirements
+- **ILDA laser projector** with **analog color** inputs (not TTL).  
+  Example: <https://phantomdynamics.com/unity-lasers-elite-2-ilda-laser-light-show-projector/>
+- **Helios Laser DAC**  
+  Example: <https://ebay.us/m/KVduID>
+- **Computer with Node.js**  
+  Get Node.js: <https://nodejs.org/>
+
+## Install
+1. Install Node.js if you haven’t already.  
+2. Download this repo and extract it to a folder.  
+3. Open a terminal and `cd` into the project folder. Easiest way: type `cd ` then drag the folder into the terminal.
+   ```bash
+   cd /path/to/projectKleee02
+   ```
+4. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+## Run
+Start the example show (will auto-scan for `token_N.json` files in the folder):
+```bash
 node main.js
-``` 
-note: the script will automatically scan the folder for token_N.json files and add them all to a list.          
-to play the next or previous token hit the arrow keys on the keyboard.
+```
 
-## get your own token files:
-go to:         
-https://fungle.xyz/kleee02_new/visual/#328        
-replace the number after the # with the token number you want to project.       
-if you want you can modify speed and/or FPS in the settings.     
-once you're happy click on the lower right corner of the page,        
-a red circle will appear signaling that it’s now recording.     
-don't touch anything now. it is recording the token animation. wait for the red circle to dissapear.        
-after a full loop a file of token_N.json will be saved to your downloads folder.    
-you can now copy that file to the projectKleee02 folder and project it.       
-note: some of the settings of the editor will be taken into account like FPS and Animation Speed.     
+**Controls**
+- **Left/Right Arrow**: Previous/Next token
+
+> Note: On launch, the script finds every file that matches `token_N.json` and queues them.
+
+## Get Your Own Token Files
+1. Open:  
+   `https://fungle.xyz/kleee02_new/visual/#328`  
+   Replace `#328` with the token number you want to project.
+2. (Optional) Adjust **Animation Speed** and/or **FPS** in the page settings.
+3. Click the **lower-right corner** to start recording (a **red circle** appears).
+4. Don’t touch anything while it records. After one full loop, the red circle disappears.
+5. A file named `token_N.json` is saved to your **Downloads** folder.
+6. Copy that file into your `projectKleee02` folder. Run `node main.js` to project it.
+
+> Some editor settings (like **FPS** and **Animation Speed**) are embedded into the exported file and will affect playback.
+
+---
+
+### Tips
+- Use **analog**-capable projectors for smooth color fades; TTL-only units won’t render colors correctly.
+- Keep beam paths **above eye level** and avoid reflective surfaces.
+- Secure the projector and **use interlocks** where available.
+
+Stay safe & have fun!
