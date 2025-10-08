@@ -1,12 +1,19 @@
 # projectKleee02
  
 ## what you need:
-- laser projector with analog colors (not TTL)
-- helios laser dac
+- ilda laser projector with analog colors (not TTL)     
+[for example https://phantomdynamics.com/unity-lasers-elite-2-ilda-laser-light-show-projector/ ]     
+- helios laser dac     
+[for example https://ebay.us/m/KVduID]      
 - computer with node js
 
 get node js here:
 https://nodejs.org/
+
+:          
+    
+    
+
 
 ## installation:
 install node js if you have not yet.       
