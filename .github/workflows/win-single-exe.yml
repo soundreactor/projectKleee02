@@ -1,15 +1,21 @@
-name: Windows Single EXE (Node 16.20.2, native addons)
+name: Windows Single EXE (Node 16.20.2, native addons, artifact-first)
 
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-win:
-    runs-on: windows-latest
+    name: Build Windows x64 EXE
+    runs-on: windows-2022
     timeout-minutes: 360
     env:
       NODE_VERSION: 16.20.2
@@ -19,15 +25,21 @@ jobs:
       npm_config_msvs_version: 2022
 
     steps:
+      - name: Start transcript
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:RUNNER_TEMP\logs | Out-Null
+          Start-Transcript -Path "$env:RUNNER_TEMP\logs\build-transcript.txt" -Force
+
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node (tooling)
+      - name: Setup Node (16.20.2)
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Setup Python (node-gyp)
+      - name: Setup Python (for node-gyp)
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
@@ -38,24 +50,22 @@ jobs:
           path: ${{ env.NEXE_CACHE }}
           key: ${{ runner.os }}-nexe-${{ env.NODE_VERSION }}
 
-      - name: Decide entry file (pkg-entry.cjs or main.js)
+      - name: Decide entry file (pkg-entry.cjs preferred; else main.js)
+        id: entry
         shell: pwsh
         run: |
-          if (Test-Path .\pkg-entry.cjs) { $entry = 'pkg-entry.cjs' }
-          elseif (Test-Path .\main.js) { $entry = 'main.js' }
-          else {
-            Write-Error "No entry file found (pkg-entry.cjs or main.js)"; exit 1
-          }
-          "ENTRY_FILE=$entry" | Out-File -FilePath $env:GITHUB_ENV -Append
-          Write-Host "ENTRY_FILE=$entry"
+          if (Test-Path .\pkg-entry.cjs) { $e='pkg-entry.cjs' }
+          elseif (Test-Path .\main.js)   { $e='main.js' }
+          else { Write-Error "No entry file (pkg-entry.cjs or main.js)"; exit 1 }
+          "ENTRY_FILE=$e" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "ENTRY_FILE=$e"
 
-      - name: Install production deps (compile native addons for Win x64)
-        run: npm ci
+      - name: Install production deps (compile native addons on Windows x64)
+        run: npm ci --omit=dev
 
-      - name: Quick sanity (ffi-napi load)
+      - name: Sanity check N-API addon (ffi-napi)
         shell: pwsh
-        run: |
-          node -e "require('ffi-napi'); console.log('ffi-napi OK')"
+        run: node -e "require('ffi-napi'); console.log('ffi-napi OK')"
 
       - name: Build single EXE with nexe (--build Node 16.20.2)
         shell: pwsh
@@ -72,28 +82,42 @@ jobs:
           --resource "**\*.node"
           --resource "**\*.dll"
 
-      - name: List output and checksum
+      - name: List outputs + checksum
         shell: pwsh
         run: |
           dir dist
           Get-FileHash "dist\$env:EXE_NAME" -Algorithm SHA256
 
-      - name: Upload artifact (fallback)
+      # Always upload exe artifact (so you can download it even if release upload is blocked)
+      - name: Upload exe artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.EXE_NAME }}
           path: dist/${{ env.EXE_NAME }}
 
-      - name: Create/Update Release and upload EXE
+      # Best-effort add to Release; never fail the job because of release permissions
+      - name: Create/Update Release and upload EXE (best-effort)
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { exit 0 }
           $tag = "$env:GITHUB_REF_NAME"
-          if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
-            Write-Error "gh CLI not available on runner"; exit 1
-          }
           gh release view $tag 2>$null `
             || gh release create $tag -t $tag -n "Windows single EXE (Node $env:NODE_VERSION, native addons built on Windows)"
           gh release upload $tag "dist\$env:EXE_NAME" --clobber
+
+      - name: Stop transcript
+        if: always()
+        shell: pwsh
+        run: Stop-Transcript
+
+      - name: Upload transcript
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-transcript
+          path: ${{ runner.temp }}\logs\build-transcript.txt
