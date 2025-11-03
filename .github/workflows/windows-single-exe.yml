@@ -1,0 +1,118 @@
+name: Windows Single EXE (Node 16.20.2, native addons)
+
+on:
+  push:
+    tags: ['win-*']      # 👈 Only runs for tags like win-0001, win-0002, ...
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-win:
+    name: Build Windows x64 EXE
+    runs-on: windows-latest
+    timeout-minutes: 360
+    env:
+      NODE_VERSION: 16.20.2
+      EXE_NAME: kleee02-win64.exe
+      NEXE_CACHE: ${{ runner.temp }}\.nexe-cache
+      GYP_MSVS_VERSION: 2022
+      npm_config_msvs_version: 2022
+
+    steps:
+      - name: Start transcript
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:RUNNER_TEMP\logs | Out-Null
+          Start-Transcript -Path "$env:RUNNER_TEMP\logs\build-transcript.txt" -Force
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Python (node-gyp)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Cache nexe build cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.NEXE_CACHE }}
+          key: ${{ runner.os }}-nexe-${{ env.NODE_VERSION }}
+
+      - name: Decide entry file (pkg-entry.cjs / main.js / main_auto.js)
+        id: entry
+        shell: pwsh
+        run: |
+          if (Test-Path .\pkg-entry.cjs)      { $e='pkg-entry.cjs' }
+          elseif (Test-Path .\main.js)        { $e='main.js' }
+          elseif (Test-Path .\main_auto.js)   { $e='main_auto.js' }
+          else { Write-Error "No entry file (pkg-entry.cjs / main.js / main_auto.js)"; exit 1 }
+          "ENTRY_FILE=$e" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "ENTRY_FILE=$e"
+
+      - name: Install production deps only (compile native addons on Windows x64)
+        run: npm ci --omit=dev
+
+      - name: Sanity: ffi-napi loads
+        shell: pwsh
+        run: node -e "require('ffi-napi'); console.log('ffi-napi OK')"
+
+      - name: Build single EXE (nexe --build, Node 16.20.2)
+        shell: pwsh
+        env:
+          NEXE_CACHE: ${{ env.NEXE_CACHE }}
+        run: >
+          npx --yes nexe@5.0.0-beta.4
+          $env:ENTRY_FILE
+          -t windows-x64-${{ env.NODE_VERSION }}
+          --build
+          --output dist\$env:EXE_NAME
+          --resource "fonts\**\*"
+          --resource "token_*.json"
+          --resource "**\*.node"
+          --resource "**\*.dll"
+
+      - name: List outputs + checksum
+        shell: pwsh
+        run: |
+          dir dist
+          Get-FileHash "dist\$env:EXE_NAME" -Algorithm SHA256
+
+      - name: Upload EXE artifact (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.EXE_NAME }}
+          path: dist/${{ env.EXE_NAME }}
+
+      - name: Create/Update Release and upload EXE (best-effort)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { exit 0 }
+          $tag = "$env:GITHUB_REF_NAME"
+          gh release view $tag 2>$null `
+            || gh release create $tag -t $tag -n "Windows single EXE (Node $env:NODE_VERSION, native addons built on Windows)"
+          gh release upload $tag "dist\$env:EXE_NAME" --clobber
+
+      - name: Stop transcript
+        if: always()
+        shell: pwsh
+        run: Stop-Transcript
+
+      - name: Upload transcript (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-transcript
+          path: ${{ runner.temp }}\logs\build-transcript.txt
