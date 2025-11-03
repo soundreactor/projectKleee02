@@ -33,8 +33,8 @@ jobs:
       - run: npm ci || npm i
       - run: npm i -D pkg
       - run: mkdir -p dist
-      - name: Build with pkg
-        run: npx pkg --targets ${{ matrix.target }} --output dist/${{ matrix.out }} .
+      - name: Build with pkg (uses CJS launcher for ESM app)
+        run: npx pkg pkg-entry.cjs --targets ${{ matrix.target }} --output dist/${{ matrix.out }}
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.out }}

@@ -10,11 +10,11 @@
   },
   "description": "Play Kleee02 NFTs on an ILDA laser projector (bundled binary)",
   "license": "MIT",
-  "bin": "./main.js",
+  "bin": "./pkg-entry.cjs",
   "scripts": {
-    "build:win": "mkdir -p dist && npx pkg --targets node16-win-x64   --output dist/kleee02-win-x64.exe .",
-    "build:linux": "mkdir -p dist && npx pkg --targets node16-linux-x64 --output dist/kleee02-linux-x64 .",
-    "build:mac": "mkdir -p dist && npx pkg --targets node16-macos-x64 --output dist/kleee02-macos-x64 .",
+    "build:win": "mkdir -p dist && npx pkg pkg-entry.cjs --targets node16-win-x64   --output dist/kleee02-win-x64.exe",
+    "build:linux": "mkdir -p dist && npx pkg pkg-entry.cjs --targets node16-linux-x64 --output dist/kleee02-linux-x64",
+    "build:mac": "mkdir -p dist && npx pkg pkg-entry.cjs --targets node16-macos-x64 --output dist/kleee02-macos-x64",
     "build:all": "npm run build:win && npm run build:linux && npm run build:mac"
   },
   "pkg": {
