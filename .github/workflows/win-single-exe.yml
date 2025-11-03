@@ -1,0 +1,81 @@
+name: Windows Single EXE (Node 16.20.2, native addons)
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: 16.20.2
+  ENTRY_FILE: pkg-entry.cjs    # falls back to main.js if you change it below
+  EXE_NAME: kleee02-win64.exe
+  NEXE_CACHE: ${{ runner.temp }}\.nexe-cache
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node (for tooling)
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Python (node-gyp)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Cache nexe build artifacts
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.NEXE_CACHE }}
+          key: ${{ runner.os }}-nexe-${{ env.NODE_VERSION }}
+
+      - name: Configure MSVC for node-gyp
+        shell: pwsh
+        run: |
+          npm config set msvs_version 2022
+          echo "GYP_MSVS_VERSION=2022" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Install production deps (compile native addons for Win x64)
+        run: npm ci
+
+      - name: Sanity check ffi-napi loads (optional but helpful)
+        shell: pwsh
+        run: node -e "require('ffi-napi'); console.log('ffi-napi OK')"
+
+      - name: Build single EXE with nexe (--build, Node 16.20.2 embedded)
+        run: >
+          npx --yes nexe@5.0.0-beta.4
+          $env:ENTRY_FILE
+          -t windows-x64-${{ env.NODE_VERSION }}
+          --build
+          --output dist\$env:EXE_NAME
+          --resource "fonts\**\*"
+          --resource "token_*.json"
+          --resource "**\*.node"
+          --resource "**\*.dll"
+        env:
+          NEXE_CACHE: ${{ env.NEXE_CACHE }}
+
+      - name: Upload artifact (fallback download if release blocked)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.EXE_NAME }}
+          path: dist/${{ env.EXE_NAME }}
+
+      - name: Create/Upload GitHub Release via gh (no third-party actions needed)
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "$env:GITHUB_REF_NAME"
+          gh release view $tag 2>$null || gh release create $tag -t $tag -n "Windows single-file exe (Node $env:NODE_VERSION, native addons compiled on Windows)"
+          gh release upload $tag "dist\$env:EXE_NAME" --clobber
