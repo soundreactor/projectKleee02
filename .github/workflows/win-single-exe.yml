@@ -7,21 +7,22 @@ on:
 permissions:
   contents: write
 
-env:
-  NODE_VERSION: 16.20.2
-  ENTRY_FILE: pkg-entry.cjs    # falls back to main.js if you change it below
-  EXE_NAME: kleee02-win64.exe
-  NEXE_CACHE: ${{ runner.temp }}\.nexe-cache
-
 jobs:
-  build:
+  build-win:
     runs-on: windows-latest
+    timeout-minutes: 360
+    env:
+      NODE_VERSION: 16.20.2
+      EXE_NAME: kleee02-win64.exe
+      NEXE_CACHE: ${{ runner.temp }}\.nexe-cache
+      GYP_MSVS_VERSION: 2022
+      npm_config_msvs_version: 2022
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node (for tooling)
+      - name: Setup Node (tooling)
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -31,26 +32,35 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Cache nexe build artifacts
+      - name: Cache nexe build cache
         uses: actions/cache@v4
         with:
           path: ${{ env.NEXE_CACHE }}
           key: ${{ runner.os }}-nexe-${{ env.NODE_VERSION }}
 
-      - name: Configure MSVC for node-gyp
+      - name: Decide entry file (pkg-entry.cjs or main.js)
         shell: pwsh
         run: |
-          npm config set msvs_version 2022
-          echo "GYP_MSVS_VERSION=2022" | Out-File -FilePath $env:GITHUB_ENV -Append
+          if (Test-Path .\pkg-entry.cjs) { $entry = 'pkg-entry.cjs' }
+          elseif (Test-Path .\main.js) { $entry = 'main.js' }
+          else {
+            Write-Error "No entry file found (pkg-entry.cjs or main.js)"; exit 1
+          }
+          "ENTRY_FILE=$entry" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Write-Host "ENTRY_FILE=$entry"
 
       - name: Install production deps (compile native addons for Win x64)
         run: npm ci
 
-      - name: Sanity check ffi-napi loads (optional but helpful)
+      - name: Quick sanity (ffi-napi load)
         shell: pwsh
-        run: node -e "require('ffi-napi'); console.log('ffi-napi OK')"
+        run: |
+          node -e "require('ffi-napi'); console.log('ffi-napi OK')"
 
-      - name: Build single EXE with nexe (--build, Node 16.20.2 embedded)
+      - name: Build single EXE with nexe (--build Node 16.20.2)
+        shell: pwsh
+        env:
+          NEXE_CACHE: ${{ env.NEXE_CACHE }}
         run: >
           npx --yes nexe@5.0.0-beta.4
           $env:ENTRY_FILE
@@ -61,21 +71,29 @@ jobs:
           --resource "token_*.json"
           --resource "**\*.node"
           --resource "**\*.dll"
-        env:
-          NEXE_CACHE: ${{ env.NEXE_CACHE }}
 
-      - name: Upload artifact (fallback download if release blocked)
+      - name: List output and checksum
+        shell: pwsh
+        run: |
+          dir dist
+          Get-FileHash "dist\$env:EXE_NAME" -Algorithm SHA256
+
+      - name: Upload artifact (fallback)
         uses: actions/upload-artifact@v4
         with:
           name: ${{ env.EXE_NAME }}
           path: dist/${{ env.EXE_NAME }}
 
-      - name: Create/Upload GitHub Release via gh (no third-party actions needed)
+      - name: Create/Update Release and upload EXE
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = "$env:GITHUB_REF_NAME"
-          gh release view $tag 2>$null || gh release create $tag -t $tag -n "Windows single-file exe (Node $env:NODE_VERSION, native addons compiled on Windows)"
+          if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+            Write-Error "gh CLI not available on runner"; exit 1
+          }
+          gh release view $tag 2>$null `
+            || gh release create $tag -t $tag -n "Windows single EXE (Node $env:NODE_VERSION, native addons built on Windows)"
           gh release upload $tag "dist\$env:EXE_NAME" --clobber
