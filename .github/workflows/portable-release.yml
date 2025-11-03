@@ -1,0 +1,184 @@
+name: Portable Release (Node 16.20.2 runtime included)
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: "16.20.2"
+
+jobs:
+  windows-sfx-exe:
+    name: Windows SFX EXE (Node ${{ env.NODE_VERSION }})
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install production deps
+        run: npm ci --omit=dev
+
+      - name: Install tools (7-Zip, UPX)
+        run: |
+          choco install 7zip -y
+          choco install upx -y
+        shell: pwsh
+
+      - name: Assemble portable payload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path dist, portable | Out-Null
+
+          # 1) Fetch official Node 16.20.2 Win x64 runtime
+          $nv = "${{ env.NODE_VERSION }}"
+          $zip = "node-v$nv-win-x64.zip"
+          $url = "https://nodejs.org/dist/v$nv/$zip"
+          curl.exe -L -o $zip $url
+
+          # 2) Extract Node -> portable\node
+          & "C:\Program Files\7-Zip\7z.exe" x $zip -oNODE | Out-Null
+          New-Item -ItemType Directory -Force -Path portable\node | Out-Null
+          Copy-Item -Recurse -Force "NODE\node-v$nv-win-x64\*" "portable\node\"
+
+          # 3) (Optional) trim and compress Node binary to shrink final EXE
+          & "$env:ChocolateyInstall\bin\upx.exe" --best --lzma "portable\node\node.exe"
+
+          # 4) Copy app entry & assets (NO source changes)
+          Copy-Item -Force main.js portable\
+          if (Test-Path main_auto.js) { Copy-Item -Force main_auto.js portable\ }
+          if (Test-Path fonts)       { Copy-Item -Recurse -Force fonts portable\fonts }
+          Get-ChildItem -Path . -Filter "token_*.json" -File -ErrorAction SilentlyContinue | %{
+            Copy-Item -Force $_.FullName portable\
+          }
+          # production node_modules
+          Copy-Item -Recurse -Force node_modules portable\node_modules
+          if (Test-Path package.json) { Copy-Item -Force package.json portable\ }
+
+          # 5) Startup script (double-click friendly)
+          Set-Content -Encoding ASCII portable\start-kleee02.bat @'
+@echo off
+setlocal
+cd /d "%~dp0"
+echo Starting Kleee02 (bundled Node 16.20.2)...
+".\node\node.exe" ".\main.js" %*
+'@
+
+          # 6) Build self-extracting EXE via 7-Zip SFX
+          Set-Content -Encoding UTF8 .\config.txt @'
+;!@Install@!UTF-8!
+Title="Kleee02 Portable (Node 16.20.2)"
+BeginPrompt="Extracting Kleee02..."
+RunProgram="start-kleee02.bat"
+;!@InstallEnd@!
+'@
+          & "C:\Program Files\7-Zip\7z.exe" a -t7z -mx9 app.7z .\portable\* | Out-Null
+
+          # Find SFX module (7z.sfx). On choco install it's here:
+          $sfx = "C:\Program Files\7-Zip\7z.sfx"
+          if (-not (Test-Path $sfx)) {
+            throw "7z.sfx not found at: $sfx"
+          }
+
+          cmd /c copy /b "$sfx"+config.txt+app.7z dist\kleee02-win64-portable-node16.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kleee02-win64-portable-node16.exe
+          path: dist/kleee02-win64-portable-node16.exe
+
+  linux-portable:
+    name: Linux tar.gz (Node ${{ env.NODE_VERSION }} included)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm ci --omit=dev
+      - name: Pack
+        run: |
+          set -e
+          mkdir -p dist portable/node
+          curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz -o node.tar.xz
+          tar -xJf node.tar.xz
+          mv node-v${NODE_VERSION}-linux-x64/* portable/node/
+          cp -a main.js portable/
+          [ -f main_auto.js ] && cp -a main_auto.js portable/ || true
+          [ -d fonts ] && cp -a fonts portable/ || true
+          [ -d node_modules ] && cp -a node_modules portable/ || true
+          [ -f package.json ] && cp -a package.json portable/ || true
+          cp -a token_*.json portable/ 2>/dev/null || true
+          cat > portable/run.sh <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+DIR="$(cd "$(dirname "$0")" && pwd)"
+exec "$DIR/node/bin/node" "$DIR/main.js" "$@"
+SH
+          chmod +x portable/run.sh
+          tar -C portable -czf dist/kleee02-linux-x64-portable-node16.tar.gz .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kleee02-linux-x64-portable-node16.tar.gz
+          path: dist/kleee02-linux-x64-portable-node16.tar.gz
+
+  macos-portable:
+    name: macOS tar.gz (Node ${{ env.NODE_VERSION }} included)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm ci --omit=dev
+      - name: Pack
+        run: |
+          set -e
+          mkdir -p dist portable/node
+          curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-darwin-x64.tar.gz -o node.tgz
+          tar -xzf node.tgz
+          mv node-v${NODE_VERSION}-darwin-x64/* portable/node/
+          cp -a main.js portable/
+          [ -f main_auto.js ] && cp -a main_auto.js portable/ || true
+          [ -d fonts ] && cp -a fonts portable/ || true
+          [ -d node_modules ] && cp -a node_modules portable/ || true
+          [ -f package.json ] && cp -a package.json portable/ || true
+          cp -a token_*.json portable/ 2>/dev/null || true
+          cat > portable/run.sh <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+DIR="$(cd "$(dirname "$0")" && pwd)"
+exec "$DIR/node/bin/node" "$DIR/main.js" "$@"
+SH
+          chmod +x portable/run.sh
+          tar -C portable -czf dist/kleee02-macos-x64-portable-node16.tar.gz .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kleee02-macos-x64-portable-node16.tar.gz
+          path: dist/kleee02-macos-x64-portable-node16.tar.gz
+
+  release:
+    name: Publish Release
+    needs: [windows-sfx-exe, linux-portable, macos-portable]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*/kleee02-win64-portable-node16.exe
+            dist/*/kleee02-linux-x64-portable-node16.tar.gz
+            dist/*/kleee02-macos-x64-portable-node16.tar.gz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
