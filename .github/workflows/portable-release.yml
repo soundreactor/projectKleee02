@@ -22,47 +22,65 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Install production deps
-        run: npm ci --omit=dev
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
 
-      - name: Install tools (7-Zip, UPX)
+      # Ensure MSVC environment (node-gyp/native deps stability)
+      - name: Setup MSVC Dev Cmd
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure npm for MSVC 2022 (best-effort)
         run: |
-          choco install 7zip -y
-          choco install upx -y
+          npm config set msvs_version 2022 || true
         shell: pwsh
 
-      - name: Assemble portable payload
+      - name: Install production deps only
+        run: npm ci --omit=dev
+
+      - name: Install tools (7-Zip with SFX + UPX; UPX optional)
+        run: |
+          choco install 7zip.install -y
+          choco install upx -y || echo "UPX not essential; continuing"
+        shell: pwsh
+
+      - name: Assemble portable payload & build SFX
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
           New-Item -ItemType Directory -Force -Path dist, portable | Out-Null
 
-          # 1) Fetch official Node 16.20.2 Win x64 runtime
-          $nv = "${{ env.NODE_VERSION }}"
+          # --- Download official Node 16.20.2 Win x64 ---
+          $nv  = "${{ env.NODE_VERSION }}"
           $zip = "node-v$nv-win-x64.zip"
           $url = "https://nodejs.org/dist/v$nv/$zip"
           curl.exe -L -o $zip $url
+          if ((Get-Item $zip).Length -lt 10000000) { throw "Downloaded Node zip looks too small" }
 
-          # 2) Extract Node -> portable\node
+          # --- Extract Node into portable\node ---
           & "C:\Program Files\7-Zip\7z.exe" x $zip -oNODE | Out-Null
           New-Item -ItemType Directory -Force -Path portable\node | Out-Null
           Copy-Item -Recurse -Force "NODE\node-v$nv-win-x64\*" "portable\node\"
 
-          # 3) (Optional) trim and compress Node binary to shrink final EXE
-          & "$env:ChocolateyInstall\bin\upx.exe" --best --lzma "portable\node\node.exe"
+          # --- Optional: compress node.exe to shrink bundle ---
+          $upx = (Get-Command upx.exe -ErrorAction SilentlyContinue).Source
+          if ($upx -and (Test-Path "portable\node\node.exe")) {
+            & $upx --best --lzma "portable\node\node.exe" || echo "UPX failed; continuing"
+          }
 
-          # 4) Copy app entry & assets (NO source changes)
-          Copy-Item -Force main.js portable\
+          # --- Copy app files (no code changes) ---
+          Copy-Item -Force main.js portable\  # entry point
           if (Test-Path main_auto.js) { Copy-Item -Force main_auto.js portable\ }
           if (Test-Path fonts)       { Copy-Item -Recurse -Force fonts portable\fonts }
           Get-ChildItem -Path . -Filter "token_*.json" -File -ErrorAction SilentlyContinue | %{
             Copy-Item -Force $_.FullName portable\
           }
-          # production node_modules
           Copy-Item -Recurse -Force node_modules portable\node_modules
           if (Test-Path package.json) { Copy-Item -Force package.json portable\ }
 
-          # 5) Startup script (double-click friendly)
+          # --- Start script (double-click) ---
           Set-Content -Encoding ASCII portable\start-kleee02.bat @'
 @echo off
 setlocal
@@ -71,7 +89,7 @@ echo Starting Kleee02 (bundled Node 16.20.2)...
 ".\node\node.exe" ".\main.js" %*
 '@
 
-          # 6) Build self-extracting EXE via 7-Zip SFX
+          # --- SFX config ---
           Set-Content -Encoding UTF8 .\config.txt @'
 ;!@Install@!UTF-8!
 Title="Kleee02 Portable (Node 16.20.2)"
@@ -79,15 +97,24 @@ BeginPrompt="Extracting Kleee02..."
 RunProgram="start-kleee02.bat"
 ;!@InstallEnd@!
 '@
+
+          # --- Pack payload to 7z ---
           & "C:\Program Files\7-Zip\7z.exe" a -t7z -mx9 app.7z .\portable\* | Out-Null
 
-          # Find SFX module (7z.sfx). On choco install it's here:
-          $sfx = "C:\Program Files\7-Zip\7z.sfx"
-          if (-not (Test-Path $sfx)) {
-            throw "7z.sfx not found at: $sfx"
+          # --- Locate 7z.sfx robustly ---
+          $sfxCandidates = @(
+            "C:\Program Files\7-Zip\7z.sfx",
+            "C:\Program Files (x86)\7-Zip\7z.sfx"
+          )
+          if (-not (Test-Path $sfxCandidates[0]) -and -not (Test-Path $sfxCandidates[1])) {
+            $found = Get-ChildItem "C:\ProgramData\chocolatey" -Recurse -Filter 7z.sfx -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+            if ($found) { $sfxCandidates = @($found) }
           }
+          $sfx = $sfxCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $sfx) { throw "7z.sfx not found. Ensure 7zip.install is present." }
 
-          cmd /c copy /b "$sfx"+config.txt+app.7z dist\kleee02-win64-portable-node16.exe
+          # --- Build SFX EXE ---
+          cmd /c copy /b "`"$sfx`"+config.txt+app.7z" dist\kleee02-win64-portable-node16.exe >NUL
 
       - uses: actions/upload-artifact@v4
         with:
