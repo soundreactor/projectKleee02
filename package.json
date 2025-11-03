@@ -7,5 +7,27 @@
     "@laser-dac/core": "^0.4.1",
     "@laser-dac/draw": "^0.6.0",
     "@laser-dac/helios": "^0.3.1"
+  },
+  "description": "Play Kleee02 NFTs on an ILDA laser projector (bundled binary)",
+  "license": "MIT",
+  "bin": "./main.js",
+  "scripts": {
+    "build:win": "npx pkg --targets node16-win-x64   --out-path dist --output dist/kleee02-win-x64.exe .",
+    "build:linux": "npx pkg --targets node16-linux-x64 --out-path dist --output dist/kleee02-linux-x64 .",
+    "build:mac": "npx pkg --targets node16-macos-x64 --out-path dist --output dist/kleee02-macos-x64 .",
+    "build:all": "npm run build:win && npm run build:linux && npm run build:mac"
+  },
+  "pkg": {
+    "outputPath": "dist",
+    "assets": [
+      "fonts/**/*",
+      "token_*.json"
+    ]
+  },
+  "engines": {
+    "node": "16.x"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
   }
 }
