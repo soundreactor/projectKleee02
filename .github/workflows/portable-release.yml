@@ -1,8 +1,9 @@
-name: Portable Release (Node 16.20.2 runtime included)
+name: Portable Release (Node 16.20.2 bundled)
 
 on:
   push:
-    tags: ["v*.*.*"]
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
 
 permissions:
@@ -13,74 +14,49 @@ env:
 
 jobs:
   windows-sfx-exe:
-    name: Windows SFX EXE (Node ${{ env.NODE_VERSION }})
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.x"
-
-      # Ensure MSVC environment (node-gyp/native deps stability)
-      - name: Setup MSVC Dev Cmd
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
-      - name: Configure npm for MSVC 2022 (best-effort)
-        run: |
-          npm config set msvs_version 2022 || true
+      - name: Install production deps (omit dev)
         shell: pwsh
-
-      - name: Install production deps only
         run: npm ci --omit=dev
 
-      - name: Install tools (7-Zip with SFX + UPX; UPX optional)
-        run: |
-          choco install 7zip.install -y
-          choco install upx -y || echo "UPX not essential; continuing"
+      - name: Install 7-Zip (SFX) and UPX
         shell: pwsh
+        run: |
+          choco install 7zip 7zip.install -y
+          choco install upx -y
 
-      - name: Assemble portable payload & build SFX
+      - name: Build portable SFX .exe (bundled Node 16.20.2)
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Stop"
+          $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path dist, portable | Out-Null
 
-          # --- Download official Node 16.20.2 Win x64 ---
           $nv  = "${{ env.NODE_VERSION }}"
           $zip = "node-v$nv-win-x64.zip"
           $url = "https://nodejs.org/dist/v$nv/$zip"
-          curl.exe -L -o $zip $url
-          if ((Get-Item $zip).Length -lt 10000000) { throw "Downloaded Node zip looks too small" }
-
-          # --- Extract Node into portable\node ---
-          & "C:\Program Files\7-Zip\7z.exe" x $zip -oNODE | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile $zip
+          Expand-Archive -Path $zip -DestinationPath . -Force
           New-Item -ItemType Directory -Force -Path portable\node | Out-Null
-          Copy-Item -Recurse -Force "NODE\node-v$nv-win-x64\*" "portable\node\"
+          Copy-Item -Recurse -Force "node-v$nv-win-x64\*" "portable\node\"
 
-          # --- Optional: compress node.exe to shrink bundle ---
-          $upx = (Get-Command upx.exe -ErrorAction SilentlyContinue).Source
-          if ($upx -and (Test-Path "portable\node\node.exe")) {
-            & $upx --best --lzma "portable\node\node.exe" || echo "UPX failed; continuing"
-          }
+          # Optional shrink of node.exe (safe; speeds up download)
+          & "$env:ChocolateyInstall\bin\upx.exe" --best --lzma "portable\node\node.exe"
 
-          # --- Copy app files (no code changes) ---
-          Copy-Item -Force main.js portable\  # entry point
+          # App + assets + prod node_modules
+          Copy-Item -Force main.js portable\
           if (Test-Path main_auto.js) { Copy-Item -Force main_auto.js portable\ }
           if (Test-Path fonts)       { Copy-Item -Recurse -Force fonts portable\fonts }
-          Get-ChildItem -Path . -Filter "token_*.json" -File -ErrorAction SilentlyContinue | %{
-            Copy-Item -Force $_.FullName portable\
-          }
-          Copy-Item -Recurse -Force node_modules portable\node_modules
+          Get-ChildItem -Filter "token_*.json" -File -ErrorAction SilentlyContinue | % { Copy-Item -Force $_.FullName portable\ }
+          if (Test-Path node_modules) { Copy-Item -Recurse -Force node_modules portable\node_modules }
           if (Test-Path package.json) { Copy-Item -Force package.json portable\ }
 
-          # --- Start script (double-click) ---
+          # Double-click starter
           Set-Content -Encoding ASCII portable\start-kleee02.bat @'
 @echo off
 setlocal
@@ -89,7 +65,7 @@ echo Starting Kleee02 (bundled Node 16.20.2)...
 ".\node\node.exe" ".\main.js" %*
 '@
 
-          # --- SFX config ---
+          # 7-Zip SFX config
           Set-Content -Encoding UTF8 .\config.txt @'
 ;!@Install@!UTF-8!
 Title="Kleee02 Portable (Node 16.20.2)"
@@ -98,23 +74,13 @@ RunProgram="start-kleee02.bat"
 ;!@InstallEnd@!
 '@
 
-          # --- Pack payload to 7z ---
-          & "C:\Program Files\7-Zip\7z.exe" a -t7z -mx9 app.7z .\portable\* | Out-Null
+          $sevenZip = "${env:ProgramFiles}\7-Zip\7z.exe"
+          $sfx      = "${env:ProgramFiles}\7-Zip\7z.sfx"
+          if (-not (Test-Path $sevenZip)) { throw "7z.exe not found at $sevenZip" }
+          if (-not (Test-Path $sfx))      { throw "7z.sfx not found at $sfx" }
 
-          # --- Locate 7z.sfx robustly ---
-          $sfxCandidates = @(
-            "C:\Program Files\7-Zip\7z.sfx",
-            "C:\Program Files (x86)\7-Zip\7z.sfx"
-          )
-          if (-not (Test-Path $sfxCandidates[0]) -and -not (Test-Path $sfxCandidates[1])) {
-            $found = Get-ChildItem "C:\ProgramData\chocolatey" -Recurse -Filter 7z.sfx -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-            if ($found) { $sfxCandidates = @($found) }
-          }
-          $sfx = $sfxCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $sfx) { throw "7z.sfx not found. Ensure 7zip.install is present." }
-
-          # --- Build SFX EXE ---
-          cmd /c copy /b "`"$sfx`"+config.txt+app.7z" dist\kleee02-win64-portable-node16.exe >NUL
+          & $sevenZip a -t7z -mx9 app.7z .\portable\* | Out-Null
+          cmd /c copy /b "$sfx"+config.txt+app.7z dist\kleee02-win64-portable-node16.exe
 
       - uses: actions/upload-artifact@v4
         with:
@@ -122,15 +88,17 @@ RunProgram="start-kleee02.bat"
           path: dist/kleee02-win64-portable-node16.exe
 
   linux-portable:
-    name: Linux tar.gz (Node ${{ env.NODE_VERSION }} included)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - run: npm ci --omit=dev
-      - name: Pack
+
+      - name: Install production deps (omit dev)
+        run: npm ci --omit=dev
+
+      - name: Build tar.gz (bundled Node 16.20.2)
         run: |
           set -e
           mkdir -p dist portable/node
@@ -158,15 +126,17 @@ SH
           path: dist/kleee02-linux-x64-portable-node16.tar.gz
 
   macos-portable:
-    name: macOS tar.gz (Node ${{ env.NODE_VERSION }} included)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-      - run: npm ci --omit=dev
-      - name: Pack
+
+      - name: Install production deps (omit dev)
+        run: npm ci --omit=dev
+
+      - name: Build tar.gz (bundled Node 16.20.2)
         run: |
           set -e
           mkdir -p dist portable/node
@@ -194,7 +164,6 @@ SH
           path: dist/kleee02-macos-x64-portable-node16.tar.gz
 
   release:
-    name: Publish Release
     needs: [windows-sfx-exe, linux-portable, macos-portable]
     runs-on: ubuntu-latest
     steps:
@@ -203,9 +172,6 @@ SH
           path: dist
       - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/*/kleee02-win64-portable-node16.exe
-            dist/*/kleee02-linux-x64-portable-node16.tar.gz
-            dist/*/kleee02-macos-x64-portable-node16.tar.gz
+          files: dist/**
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
