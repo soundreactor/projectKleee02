@@ -12,9 +12,9 @@
   "license": "MIT",
   "bin": "./pkg-entry.cjs",
   "scripts": {
-    "build:win": "mkdir -p dist && npx pkg pkg-entry.cjs --targets node16-win-x64   --output dist/kleee02-win-x64.exe",
-    "build:linux": "mkdir -p dist && npx pkg pkg-entry.cjs --targets node16-linux-x64 --output dist/kleee02-linux-x64",
-    "build:mac": "mkdir -p dist && npx pkg pkg-entry.cjs --targets node16-macos-x64 --output dist/kleee02-macos-x64",
+    "build:win": "mkdir -p dist && npx nexe main.js -t windows-x64-16.20.2 -o dist/kleee02-win-x64.exe --resource \"fonts/**/*\" --resource \"token_*.json\" --resource \"**/*.node\"",
+    "build:linux": "mkdir -p dist && npx nexe main.js -t linux-x64-16.20.2   -o dist/kleee02-linux-x64   --resource \"fonts/**/*\" --resource \"token_*.json\" --resource \"**/*.node\"",
+    "build:mac": "mkdir -p dist && npx nexe main.js -t mac-x64-16.20.2     -o dist/kleee02-macos-x64   --resource \"fonts/**/*\" --resource \"token_*.json\" --resource \"**/*.node\"",
     "build:all": "npm run build:win && npm run build:linux && npm run build:mac"
   },
   "pkg": {
@@ -28,6 +28,7 @@
     "node": "16.x"
   },
   "devDependencies": {
+    "nexe": "^5.0.0-beta.4",
     "pkg": "^5.8.1"
   }
 }
