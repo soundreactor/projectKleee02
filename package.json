@@ -12,9 +12,9 @@
   "license": "MIT",
   "bin": "./pkg-entry.cjs",
   "scripts": {
-    "build:win": "mkdir -p dist && npx nexe main.js -t windows-x64-16.16.0 -o dist/kleee02-win-x64.exe   --resource \"fonts/**/*\" --resource \"token_*.json\" --resource \"**/*.node\"",
-    "build:linux": "mkdir -p dist && npx nexe main.js -t linux-x64-16.16.0   -o dist/kleee02-linux-x64     --resource \"fonts/**/*\" --resource \"token_*.json\" --resource \"**/*.node\"",
-    "build:mac": "mkdir -p dist && npx nexe main.js -t mac-x64-16.16.0     -o dist/kleee02-macos-x64     --resource \"fonts/**/*\" --resource \"token_*.json\" --resource \"**/*.node\"",
+    "build:win": "mkdir -p dist && NEXE_CACHE=./.nexe-cache npx nexe main.js -t windows-x64-16.16.0 --build -o dist/kleee02-win-x64.exe   --resource \"fonts/**/*\" --resource \"token_*.json\" --resource \"**/*.node\" --verbose",
+    "build:linux": "mkdir -p dist && NEXE_CACHE=./.nexe-cache npx nexe main.js -t linux-x64-16.16.0   --build -o dist/kleee02-linux-x64     --resource \"fonts/**/*\" --resource \"token_*.json\" --resource \"**/*.node\" --verbose",
+    "build:mac": "mkdir -p dist && NEXE_CACHE=./.nexe-cache npx nexe main.js -t mac-x64-16.16.0     --build -o dist/kleee02-macos-x64     --resource \"fonts/**/*\" --resource \"token_*.json\" --resource \"**/*.node\" --verbose",
     "build:all": "npm run build:win && npm run build:linux && npm run build:mac"
   },
   "pkg": {

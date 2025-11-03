@@ -1,13 +1,16 @@
-name: Nexe Single-File Release (Node 16.16.0)
+name: Nexe Single-File Release (Node 16.16.0, build from source)
 
 on:
   push:
-    tags:
-      - "v*.*.*"
+    tags: ["v*.*.*"]
   workflow_dispatch:
 
 permissions:
   contents: write
+
+env:
+  NODE_VERSION: "16.16.0"
+  NEXE_CACHE: "${{ runner.temp }}/.nexe-cache"
 
 jobs:
   build:
@@ -27,20 +30,58 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: 16.16.0
-      - run: npm ci || npm i
+          node-version: ${{ env.NODE_VERSION }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      # Linux toolchain
+      - name: Linux build prerequisites
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y build-essential python3 g++ make libssl-dev pkg-config
+
+      # Windows toolchain (MSVC env + NASM; helps Node 16 build)
+      - name: Setup MSVC Dev Cmd
+        if: matrix.os == 'windows-latest'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Ensure NASM on Windows
+        if: matrix.os == 'windows-latest'
+        run: choco install nasm -y
+        shell: pwsh
+
+      - name: Cache nexe build artifacts
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.NEXE_CACHE }}
+          key: ${{ runner.os }}-nexe-${{ env.NODE_VERSION }}
+
+      - run: npm ci
+
       - run: npm i -D nexe
-      - name: Build single-file with nexe
+
+      - name: Build single-file with nexe (from source)
+        env:
+          NEXE_CACHE: ${{ env.NEXE_CACHE }}
         run: |
           mkdir -p dist
           npx nexe main.js \
             -t "${{ matrix.target }}" \
+            --build \
             -o "dist/${{ matrix.out }}" \
             --resource "fonts/**/*" \
             --resource "token_*.json" \
-            --resource "**/*.node"
+            --resource "**/*.node" \
+            --verbose
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.out }}
