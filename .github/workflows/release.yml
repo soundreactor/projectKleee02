@@ -1,0 +1,55 @@
+name: Build & Release binaries
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.os }} target
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            target: node16-win-x64
+            out: kleee02-win-x64.exe
+          - os: ubuntu-latest
+            target: node16-linux-x64
+            out: kleee02-linux-x64
+          - os: macos-latest
+            target: node16-macos-x64
+            out: kleee02-macos-x64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 16
+      - run: npm ci || npm i
+      - run: npm i -D pkg
+      - name: Build with pkg
+        run: npx pkg --targets ${{ matrix.target }} --out-path dist --output dist/${{ matrix.out }} .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.out }}
+          path: dist/${{ matrix.out }}
+
+  release:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*/kleee02-*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

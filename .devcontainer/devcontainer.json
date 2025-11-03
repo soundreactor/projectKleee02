@@ -1,0 +1,12 @@
+{
+  "name": "projectKleee02 (Node 16)",
+  "image": "mcr.microsoft.com/devcontainers/base:jammy",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "16"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "updateContentCommand": "npm ci || npm i",
+  "postCreateCommand": "node -v && npm -v && gh --version || true"
+}
