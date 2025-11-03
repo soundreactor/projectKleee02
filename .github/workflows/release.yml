@@ -32,8 +32,9 @@ jobs:
           node-version: 16
       - run: npm ci || npm i
       - run: npm i -D pkg
+      - run: mkdir -p dist
       - name: Build with pkg
-        run: npx pkg --targets ${{ matrix.target }} --out-path dist --output dist/${{ matrix.out }} .
+        run: npx pkg --targets ${{ matrix.target }} --output dist/${{ matrix.out }} .
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.out }}
