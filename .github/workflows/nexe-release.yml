@@ -1,4 +1,4 @@
-name: Nexe Single-File Release (Node 16.20.2 embedded)
+name: Nexe Single-File Release (Node 16.16.0)
 
 on:
   push:
@@ -16,26 +16,22 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            target: windows-x64-16.20.2
+            target: windows-x64-16.16.0
             out: kleee02-win-x64.exe
           - os: ubuntu-latest
-            target: linux-x64-16.20.2
+            target: linux-x64-16.16.0
             out: kleee02-linux-x64
           - os: macos-latest
-            target: mac-x64-16.20.2
+            target: mac-x64-16.16.0
             out: kleee02-macos-x64
 
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 16.20.2
-
-      # Install with platform-native modules (ffi-napi, etc.)
-      - run: npm ci
-
+          node-version: 16.16.0
+      - run: npm ci || npm i
       - run: npm i -D nexe
-
       - name: Build single-file with nexe
         run: |
           mkdir -p dist
@@ -45,7 +41,6 @@ jobs:
             --resource "fonts/**/*" \
             --resource "token_*.json" \
             --resource "**/*.node"
-
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.out }}
