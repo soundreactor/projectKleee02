@@ -3,175 +3,163 @@ name: Portable Release (Node 16.20.2 bundled)
 on:
   push:
     tags:
-      - 'v*.*.*'
-  workflow_dispatch:
-
-permissions:
-  contents: write
-
-env:
-  NODE_VERSION: "16.20.2"
+      - 'v*'
 
 jobs:
-  windows-sfx-exe:
-    runs-on: windows-latest
+  build:
+    name: ${{ matrix.os }} portable
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            os_name: windows
+            node_pkg_url: https://nodejs.org/dist/v16.20.2/node-v16.20.2-win-x64.zip
+            archive_ext: zip
+          - os: macos-13
+            os_name: macos
+            node_pkg_url: https://nodejs.org/dist/v16.20.2/node-v16.20.2-darwin-x64.tar.gz
+            archive_ext: tar.gz
+          - os: ubuntu-22.04
+            os_name: linux
+            node_pkg_url: https://nodejs.org/dist/v16.20.2/node-v16.20.2-linux-x64.tar.xz
+            archive_ext: tar.xz
+
+    env:
+      APP_NAME: kleee02
+      NODE_VERSION: 16.20.2
+      GH_TOKEN: ${{ github.token }}
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node (runtime for npm only)
+        uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: '16.20.2'
+          check-latest: true
 
-      - name: Install production deps (omit dev)
-        shell: pwsh
-        run: npm ci --omit=dev
-
-      - name: Install 7-Zip (SFX) and UPX
-        shell: pwsh
+      - name: Install prod deps only
         run: |
-          choco install 7zip 7zip.install -y
-          choco install upx -y
+          if [ -f package-lock.json ]; then
+            npm ci --omit=dev
+          else
+            npm i --omit=dev
+          fi
+        shell: bash
 
-      - name: Build portable SFX .exe (bundled Node 16.20.2)
-        shell: pwsh
+      - name: Make portable directory & copy app
+        id: prep
+        shell: bash
         run: |
-          $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Force -Path dist, portable | Out-Null
+          set -Eeuo pipefail
+          OUT="${{ github.workspace }}/dist/${APP_NAME}-${{ matrix.os_name }}-x64-portable-node16"
+          rm -rf "$OUT"
+          mkdir -p "$OUT/app"
+          cp -f package.json "$OUT/app/"
+          [ -f package-lock.json ] && cp -f package-lock.json "$OUT/app/" || true
+          # entry file; change if not main.js
+          cp -f main.js "$OUT/app/"
+          # assets (adjust includes as needed)
+          rsync -a --prune-empty-dirs --include="*/" --include="fonts/***" --exclude="*" . "$OUT/app/" || true
+          rsync -a --include="token_*.json" --exclude="*" . "$OUT/app/" || true
+          # installed node_modules for this OS
+          rsync -a ./node_modules "$OUT/app/"
+          echo "out=$OUT" >> $GITHUB_OUTPUT
 
-          $nv  = "${{ env.NODE_VERSION }}"
-          $zip = "node-v$nv-win-x64.zip"
-          $url = "https://nodejs.org/dist/v$nv/$zip"
-          Invoke-WebRequest -Uri $url -OutFile $zip
-          Expand-Archive -Path $zip -DestinationPath . -Force
-          New-Item -ItemType Directory -Force -Path portable\node | Out-Null
-          Copy-Item -Recurse -Force "node-v$nv-win-x64\*" "portable\node\"
-
-          # Optional shrink of node.exe (safe; speeds up download)
-          & "$env:ChocolateyInstall\bin\upx.exe" --best --lzma "portable\node\node.exe"
-
-          # App + assets + prod node_modules
-          Copy-Item -Force main.js portable\
-          if (Test-Path main_auto.js) { Copy-Item -Force main_auto.js portable\ }
-          if (Test-Path fonts)       { Copy-Item -Recurse -Force fonts portable\fonts }
-          Get-ChildItem -Filter "token_*.json" -File -ErrorAction SilentlyContinue | % { Copy-Item -Force $_.FullName portable\ }
-          if (Test-Path node_modules) { Copy-Item -Recurse -Force node_modules portable\node_modules }
-          if (Test-Path package.json) { Copy-Item -Force package.json portable\ }
-
-          # Double-click starter
-          Set-Content -Encoding ASCII portable\start-kleee02.bat @'
+      - name: Add launcher script
+        shell: bash
+        run: |
+          OUT="${{ steps.prep.outputs.out }}"
+          case "${{ matrix.os_name }}" in
+            windows)
+              cat > "$OUT/run.cmd" <<'BAT'
 @echo off
 setlocal
-cd /d "%~dp0"
-echo Starting Kleee02 (bundled Node 16.20.2)...
-".\node\node.exe" ".\main.js" %*
-'@
-
-          # 7-Zip SFX config
-          Set-Content -Encoding UTF8 .\config.txt @'
-;!@Install@!UTF-8!
-Title="Kleee02 Portable (Node 16.20.2)"
-BeginPrompt="Extracting Kleee02..."
-RunProgram="start-kleee02.bat"
-;!@InstallEnd@!
-'@
-
-          $sevenZip = "${env:ProgramFiles}\7-Zip\7z.exe"
-          $sfx      = "${env:ProgramFiles}\7-Zip\7z.sfx"
-          if (-not (Test-Path $sevenZip)) { throw "7z.exe not found at $sevenZip" }
-          if (-not (Test-Path $sfx))      { throw "7z.sfx not found at $sfx" }
-
-          & $sevenZip a -t7z -mx9 app.7z .\portable\* | Out-Null
-          cmd /c copy /b "$sfx"+config.txt+app.7z dist\kleee02-win64-portable-node16.exe
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: kleee02-win64-portable-node16.exe
-          path: dist/kleee02-win64-portable-node16.exe
-
-  linux-portable:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install production deps (omit dev)
-        run: npm ci --omit=dev
-
-      - name: Build tar.gz (bundled Node 16.20.2)
-        run: |
-          set -e
-          mkdir -p dist portable/node
-          curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz -o node.tar.xz
-          tar -xJf node.tar.xz
-          mv node-v${NODE_VERSION}-linux-x64/* portable/node/
-          cp -a main.js portable/
-          [ -f main_auto.js ] && cp -a main_auto.js portable/ || true
-          [ -d fonts ] && cp -a fonts portable/ || true
-          [ -d node_modules ] && cp -a node_modules portable/ || true
-          [ -f package.json ] && cp -a package.json portable/ || true
-          cp -a token_*.json portable/ 2>/dev/null || true
-          cat > portable/run.sh <<'SH'
+set HERE=%~dp0
+"%HERE%node\node.exe" "%HERE%app\main.js" %*
+BAT
+              ;;
+            macos|linux)
+              cat > "$OUT/run.sh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
-DIR="$(cd "$(dirname "$0")" && pwd)"
-exec "$DIR/node/bin/node" "$DIR/main.js" "$@"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "$HERE/node/bin/node" "$HERE/app/main.js" "$@"
 SH
-          chmod +x portable/run.sh
-          tar -C portable -czf dist/kleee02-linux-x64-portable-node16.tar.gz .
+              chmod +x "$OUT/run.sh"
+              ;;
+          esac
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: kleee02-linux-x64-portable-node16.tar.gz
-          path: dist/kleee02-linux-x64-portable-node16.tar.gz
-
-  macos-portable:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-
-      - name: Install production deps (omit dev)
-        run: npm ci --omit=dev
-
-      - name: Build tar.gz (bundled Node 16.20.2)
+      - name: Download Node ${{ env.NODE_VERSION }} for ${{ matrix.os_name }}
+        shell: bash
         run: |
-          set -e
-          mkdir -p dist portable/node
-          curl -fsSL https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-darwin-x64.tar.gz -o node.tgz
-          tar -xzf node.tgz
-          mv node-v${NODE_VERSION}-darwin-x64/* portable/node/
-          cp -a main.js portable/
-          [ -f main_auto.js ] && cp -a main_auto.js portable/ || true
-          [ -d fonts ] && cp -a fonts portable/ || true
-          [ -d node_modules ] && cp -a node_modules portable/ || true
-          [ -f package.json ] && cp -a package.json portable/ || true
-          cp -a token_*.json portable/ 2>/dev/null || true
-          cat > portable/run.sh <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-DIR="$(cd "$(dirname "$0")" && pwd)"
-exec "$DIR/node/bin/node" "$DIR/main.js" "$@"
-SH
-          chmod +x portable/run.sh
-          tar -C portable -czf dist/kleee02-macos-x64-portable-node16.tar.gz .
+          set -Eeuo pipefail
+          OUT="${{ steps.prep.outputs.out }}"
+          URL="${{ matrix.node_pkg_url }}"
+          TMP="$(mktemp -d)"
+          echo "Fetching $URL ..."
+          curl -fsSL "$URL" -o "$TMP/node.pkg"
+          mkdir -p "$OUT/node"
+          case "${{ matrix.archive_ext }}" in
+            zip)
+              # Windows zip
+              bsdtar -x -f "$TMP/node.pkg" -C "$OUT/node" --strip-components 1 || 7z x -y "$TMP/node.pkg" -o"$OUT/node" && \
+                [ -d "$OUT/node/node-v${NODE_VERSION}-win-x64" ] && \
+                ( shopt -s dotglob nullglob; mv "$OUT/node/node-v${NODE_VERSION}-win-x64"/* "$OUT/node"/ && rmdir "$OUT/node/node-v${NODE_VERSION}-win-x64" ) || true
+              ;;
+            tar.gz|tar.xz)
+              tar -xf "$TMP/node.pkg" -C "$OUT/node" --strip-components 1
+              ;;
+          esac
+          rm -rf "$TMP"
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: kleee02-macos-x64-portable-node16.tar.gz
-          path: dist/kleee02-macos-x64-portable-node16.tar.gz
+      - name: Pack artifacts
+        id: pack
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          OUT="${{ steps.prep.outputs.out }}"
+          cd "$(dirname "$OUT")"
+          BASE="$(basename "$OUT")"
+          case "${{ matrix.os_name }}" in
+            windows)
+              # Always provide a plain ZIP
+              zip -r "../${BASE}.zip" "$BASE"
+              echo "artifact=dist/${BASE}.zip" >> $GITHUB_OUTPUT
 
-  release:
-    needs: [windows-sfx-exe, linux-portable, macos-portable]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: dist/**
+              # Optional: also build SFX .exe if 7z SFX stub is available
+              choco install -y 7zip >/nul 2>&1 || true
+              if where 7z >nul 2>&1; then
+                7z a -t7z -mx9 "../${BASE}.7z" "$BASE" >/nul
+                if exist "C:\Program Files\7-Zip\7z.sfx" (
+                  (echo ;!@Install@!UTF-8!
+                   echo Title=${{ env.APP_NAME }}
+                   echo RunProgram="run.cmd"
+                   echo ;!@InstallEnd@!) > sfx.txt
+                  copy /b "C:\Program Files\7-Zip\7z.sfx"+sfx.txt+"../${BASE}.7z" "../${BASE}.exe" >nul
+                  del sfx.txt
+                  echo "sfx=dist/${BASE}.exe" >> $GITHUB_OUTPUT
+                )
+              fi
+              ;;
+            macos|linux)
+              tar -czf "../${BASE}.tar.gz" "$BASE"
+              echo "artifact=dist/${BASE}.tar.gz" >> $GITHUB_OUTPUT
+              ;;
+          esac
+          echo "base=$BASE" >> $GITHUB_OUTPUT
+
+      - name: Create/Update GitHub Release and upload
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -Eeuo pipefail
+          ART="${{ steps.pack.outputs.artifact }}"
+          SFX="${{ steps.pack.outputs.sfx || '' }}"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" -t "$TAG" -n "Portable bundles (Node 16.20.2 bundled)"
+          gh release upload "$TAG" "$ART" --clobber
+          if [ -n "$SFX" ]; then gh release upload "$TAG" "$SFX" --clobber; fi
